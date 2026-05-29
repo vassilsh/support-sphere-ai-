@@ -27,18 +27,24 @@ fastify.post<{ Body: AnalyzeRequest }>('/api/analyze', async (request, reply) =>
   }
 
   const systemPrompt = `
-    You are an expert customer support AI. Your task is to analyze the following support ticket.
-    You MUST respond with a raw JSON object containing exactly three keys:
-    1. "summary": A concise 1-2 sentence summary of the issue.
-    2. "sentiment": The customer's sentiment, exactly one of: "positive", "negative", or "neutral".
-    3. "redactedTicket": The original ticket content, but replace ANY Personally Identifiable Information (PII) like names, email addresses, phone numbers, physical addresses, or credit card numbers with the exact string "[REDACTED]".
+  You are an expert customer support AI. Your task is to analyze the following support ticket.
+  
+  CRITICAL STEP-BY-STEP PROCESS FOR PII:
+  1. Scan the text specifically for human proper names (e.g., "Sarah Jane"), emails, card numbers, and addresses.
+  2. Replace ALL of them with "[REDACTED]".
+  3. Ensure that even if a name appears at the very end of a sentence or account note, it is wiped out.
 
-    Respond ONLY with valid JSON. Do not include markdown formatting like \`\`\`json.
-  `;
+  You MUST respond with a raw JSON object containing exactly three keys:
+  1. "summary": A concise 1-2 sentence summary of the issue.
+  2. "sentiment": The customer's sentiment, exactly one of: "positive", "negative", or "neutral".
+  3. "redactedTicket": The fully sanitized text from step 2.
+
+  Respond ONLY with valid JSON. Do not include markdown formatting.
+`;
 
   try {
     const response = await ollama.chat({
-      model: 'llama3.1', // Using your 8B model
+      model: 'qwen2.5:14b', // Using 14B model
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: ticketContent }
