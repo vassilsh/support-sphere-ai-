@@ -6,8 +6,10 @@ services:
     expose:
       - "3001"
     environment:
-      - OLLAMA_HOST=http://192.168.5.78:11434 # Ollama LXC IP
-      - LLM_MODEL=qwen2.5:1.5b                 # llama3.1, qwen2.5:14b, etc.
+      - OLLAMA_HOST=${OLLAMA_HOST}
+      - LLM_PROVIDER=${LLM_PROVIDER}
+      - LLM_MODEL=${LLM_MODEL}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
     restart: always
 
   frontend:

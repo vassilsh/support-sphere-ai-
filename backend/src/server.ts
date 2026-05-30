@@ -1,35 +1,40 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import { Ollama } from 'ollama';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { z } from 'zod';
 
+// --- Configuration & Environment ---
+const LLM_PROVIDER = process.env.LLM_PROVIDER || 'ollama'; // 'ollama' or 'gemini'
+// Gemini 1.5 Flash is lightning fast and free in AI Studio
+const LLM_MODEL = process.env.LLM_MODEL || (LLM_PROVIDER === 'gemini' ? 'gemini-1.5-flash' : 'qwen2.5:14b');
+
+// Ollama Config
 const OLLAMA_HOST = process.env.OLLAMA_HOST || 'http://localhost:11434';
-// a fallback default model if the environment variable isn't set
-const LLM_MODEL = process.env.LLM_MODEL || 'qwen2.5:14b'; 
-
 const ollama = new Ollama({ host: OLLAMA_HOST });
-const fastify = Fastify({ logger: true });
 
+// Google Gemini Config
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
+const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+
+const fastify = Fastify({ logger: true });
 fastify.register(cors, { origin: '*' });
 
-// Define a strict schema for the LLM output validation
+// --- Schema Validation ---
 const TicketAnalysisSchema = z.object({
   summary: z.string().min(1),
   sentiment: z.enum(['positive', 'negative', 'neutral']),
   redactedTicket: z.union([
     z.string(),
     z.object({ text: z.string() })
-  ]).transform((val) => {
-    // Standardize formatting so the frontend doesn't have to guess
-    if (typeof val === 'string') return val;
-    return val.text;
-  })
+  ]).transform((val) => (typeof val === 'string' ? val : val.text))
 });
 
 interface AnalyzeRequest {
   ticketContent: string;
 }
 
+// --- Route Handler ---
 fastify.post<{ Body: AnalyzeRequest }>('/api/analyze', async (request, reply) => {
   const { ticketContent } = request.body;
 
@@ -54,18 +59,42 @@ fastify.post<{ Body: AnalyzeRequest }>('/api/analyze', async (request, reply) =>
   `;
 
   try {
-   const response = await ollama.chat({
-      model: LLM_MODEL, // Dynamically driven by our environment variable!
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: ticketContent }
-      ],
-      format: 'json',
-      options: { temperature: 0.1 }
-    });
+    let rawJsonText = "";
+
+    // --- Dynamic Provider Routing ---
+    if (LLM_PROVIDER === 'gemini') {
+      if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY is missing in environment variables.');
+      
+      const model = genAI.getGenerativeModel({
+        model: LLM_MODEL,
+        generationConfig: {
+          temperature: 0.1,
+          responseMimeType: "application/json", // Enforces strict JSON return
+        }
+      });
+
+      // Gemini works best when system instructions and user prompts are clearly separated in the prompt string
+      const fullPrompt = `${systemPrompt}\n\n---TICKET CONTENT---\n${ticketContent}`;
+      
+      const result = await model.generateContent(fullPrompt);
+      rawJsonText = result.response.text();
+
+    } else {
+      // Fallback to local Ollama
+      const response = await ollama.chat({
+        model: LLM_MODEL,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: ticketContent }
+        ],
+        format: 'json',
+        options: { temperature: 0.1 }
+      });
+      rawJsonText = response.message.content;
+    }
 
     // Defensive parsing: validate raw text output via Zod
-    const rawJson = JSON.parse(response.message.content);
+    const rawJson = JSON.parse(rawJsonText);
     const validatedData = TicketAnalysisSchema.parse(rawJson);
     
     return reply.send(validatedData);

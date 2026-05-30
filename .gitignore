@@ -1,6 +1,10 @@
 # /supportsphere-ai/.gitignore
+# Dependency directories
 node_modules/
 dist/
+
+# Local Environment Secrets
 .env
+
 *.log
 .DS_Store
