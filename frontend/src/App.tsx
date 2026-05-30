@@ -27,13 +27,18 @@ function App() {
     setResult(null);
 
     try {
-      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${API_URL}/api/analyze`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticketContent }),
-      });
+//      const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+//      const response = await fetch(`${API_URL}/api/analyze`, {
+//        method: 'POST',
+//        headers: { 'Content-Type': 'application/json' },
+//        body: JSON.stringify({ ticketContent }),
+//      });
 
+   const response = await fetch('/api/analyze', {
+     method: 'POST',
+     headers: { 'Content-Type': 'application/json' },
+     body: JSON.stringify({ ticketContent }),
+   });
       if (!response.ok) {
         throw new Error(`Server responded with status: ${response.status}`);
       }
