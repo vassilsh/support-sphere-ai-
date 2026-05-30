@@ -152,4 +152,3 @@ npm run dev
 
 *Note: When running via Vite's local dev server (`http://localhost:5173`), you must configure Vite's proxy rules in `vite.config.ts` to forward `/api` requests to `localhost:3001`, as the Nginx proxy is bypassed.*
 
-```
