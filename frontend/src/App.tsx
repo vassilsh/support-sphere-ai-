@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, LayoutDashboard, History, AlertCircle, CheckCircle } from 'lucide-react';
+import { Shield, LayoutDashboard, History, AlertCircle, CheckCircle, Filter } from 'lucide-react';
 
 interface TicketHistoryItem {
   id: string;
@@ -20,9 +20,13 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // New History States
+  // History States
   const [historyData, setHistoryData] = useState<TicketHistoryItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+
+  // Filter States
+  const [sentimentFilter, setSentimentFilter] = useState<string>('all');
+  const [dateFilter, setDateFilter] = useState<string>('all');
 
   // Fetch history when entering the history tab
   useEffect(() => {
@@ -34,7 +38,6 @@ export default function App() {
   const fetchHistory = async () => {
     setHistoryLoading(true);
     try {
-      // Clean relative path that proxies through Nginx
       const response = await fetch('/api/history');
       if (!response.ok) throw new Error('Failed to fetch processing history');
       const data = await response.json();
@@ -53,7 +56,6 @@ export default function App() {
     setAnalysisResult(null);
 
     try {
-      // Clean relative path that proxies through Nginx
       const response = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -71,6 +73,38 @@ export default function App() {
       setLoading(false);
     }
   };
+
+  // Modern In-Memory Filter Engine
+  const filteredHistoryData = historyData.filter((ticket) => {
+    // 1. Evaluate Sentiment Filter Match
+    const matchesSentiment =
+      sentimentFilter === 'all' ||
+      ticket.sentiment?.toLowerCase() === sentimentFilter.toLowerCase();
+
+    // 2. Evaluate Date Range Filter Match
+    let matchesDate = true;
+    if (dateFilter !== 'all') {
+      const ticketDate = new Date(ticket.createdAt);
+      const today = new Date();
+      
+      // Zero out clocks for accurate calendar day math
+      const ticketMidnight = new Date(ticketDate.getFullYear(), ticketDate.getMonth(), ticketDate.getDate()).getTime();
+      const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+      
+      const msDiff = todayMidnight - ticketMidnight;
+      const daysDiff = Math.floor(msDiff / (1000 * 60 * 60 * 24));
+
+      if (dateFilter === 'today') {
+        matchesDate = daysDiff === 0;
+      } else if (dateFilter === '7days') {
+        matchesDate = daysDiff <= 7;
+      } else if (dateFilter === '30days') {
+        matchesDate = daysDiff <= 30;
+      }
+    }
+
+    return matchesSentiment && matchesDate;
+  });
 
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100 font-sans">
@@ -177,80 +211,130 @@ export default function App() {
         ) : (
           /* TAB 2: AUDIT & ANALYTICS HISTORY TABLE */
           <div className="space-y-6 animate-fadeIn">
-            <div>
-              <h2 className="text-2xl font-bold tracking-tight">Audit & Analytics History</h2>
-              <p className="text-sm text-slate-400">Review, filter, and inspect previously parsed customer transactions stored in the SQLite engine.</p>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-bold tracking-tight">Audit & Analytics History</h2>
+                <p className="text-sm text-slate-400">Review, filter, and inspect previously parsed customer transactions stored in the SQLite engine.</p>
+              </div>
+
+              {/* Filtering Controls Bar */}
+              <div className="flex items-center gap-3 bg-slate-950 p-2 rounded-xl border border-slate-800 self-start md:self-auto">
+                <div className="flex items-center text-slate-500 pl-2">
+                  <Filter className="w-4 h-4 mr-1" />
+                  <span className="text-xs font-medium uppercase tracking-wider">Filters:</span>
+                </div>
+                
+                {/* Sentiment Dropdown */}
+                <select
+                  value={sentimentFilter}
+                  onChange={(e) => setSentimentFilter(e.target.value)}
+                  className="bg-slate-900 border border-slate-800 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-indigo-500 text-slate-300 cursor-pointer font-medium"
+                >
+                  <option value="all">All Sentiments</option>
+                  <option value="positive">Positive Only</option>
+                  <option value="neutral">Neutral Only</option>
+                  <option value="negative">Negative Only</option>
+                </select>
+
+                {/* Date Dropdown */}
+                <select
+                  value={dateFilter}
+                  onChange={(e) => setDateFilter(e.target.value)}
+                  className="bg-slate-900 border border-slate-800 text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-indigo-500 text-slate-300 cursor-pointer font-medium"
+                >
+                  <option value="all">All Time</option>
+                  <option value="today">Today</option>
+                  <option value="7days">Last 7 Days</option>
+                  <option value="30days">Last 30 Days</option>
+                </select>
+              </div>
             </div>
 
             {historyLoading ? (
-              /* Loading Spinner Block */
               <div className="flex justify-center items-center py-12 text-slate-400 bg-slate-950 border border-slate-800 rounded-2xl">
                 <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-500 mr-3"></div>
                 <span>Syncing records with SQLite database...</span>
               </div>
             ) : historyData.length === 0 ? (
-              /* Empty Database Block */
               <div className="text-center py-12 border border-dashed border-slate-800 rounded-2xl bg-slate-950/50 text-slate-500 text-sm">
                 No transaction logs found in the audit database. Try analyzing a ticket first.
               </div>
             ) : (
-              /* Rich Data Table Layout */
               <div className="space-y-4">
+                {/* Connection Banner */}
                 <div className="bg-slate-950/40 border border-slate-800 rounded-xl p-4 flex justify-between items-center">
                   <div className="flex items-center space-x-2 text-slate-400 text-sm">
                     <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                    <span>Connection Verified. Total logs: <strong>{historyData.length}</strong></span>
+                    <span>
+                      Showing <strong>{filteredHistoryData.length}</strong> of <strong>{historyData.length}</strong> audited records
+                    </span>
                   </div>
+                  {(sentimentFilter !== 'all' || dateFilter !== 'all') && (
+                    <button
+                      onClick={() => { setSentimentFilter('all'); setDateFilter('all'); }}
+                      className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors underline underline-offset-4 font-medium"
+                    >
+                      Clear Active Filters
+                    </button>
+                  )}
                 </div>
 
-                <div className="overflow-hidden border border-slate-800 rounded-xl bg-slate-950/30 backdrop-blur-md shadow-xl">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="border-b border-slate-800 bg-slate-950 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                          <th className="px-6 py-4 w-32">Sentiment</th>
-                          <th className="px-6 py-4 w-1/4">Summary</th>
-                          <th className="px-6 py-4 w-2/5">Redacted Content (PII Purged)</th>
-                          <th className="px-6 py-4 w-40 text-right">Timestamp</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800/60 text-sm text-slate-300">
-                        {historyData.map((ticket) => {
-                          let badgeColor = 'bg-amber-500/10 text-amber-400 border-amber-500/20';
-                          if (ticket.sentiment?.toLowerCase() === 'positive') {
-                            badgeColor = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
-                          } else if (ticket.sentiment?.toLowerCase() === 'negative') {
-                            badgeColor = 'bg-rose-500/10 text-rose-400 border-rose-500/20';
-                          }
-
-                          return (
-                            <tr key={ticket.id} className="hover:bg-slate-800/20 transition-colors duration-150">
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${badgeColor}`}>
-                                  {ticket.sentiment || 'unknown'}
-                                </span>
-                              </td>
-                              <td className="px-6 py-4 font-medium text-slate-200">
-                                {ticket.summary}
-                              </td>
-                              <td className="px-6 py-4 font-mono text-xs text-slate-400 bg-slate-950/20 select-all whitespace-pre-wrap">
-                                {ticket.redactedContent}
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-right text-xs text-slate-500">
-                                {new Date(ticket.createdAt).toLocaleString(undefined, {
-                                  month: 'short',
-                                  day: 'numeric',
-                                  hour: '2-digit',
-                                  minute: '2-digit'
-                                })}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                {filteredHistoryData.length === 0 ? (
+                  /* Filter Empty State */
+                  <div className="text-center py-12 border border-dashed border-slate-800/60 rounded-xl bg-slate-950/20 text-slate-500 text-sm">
+                    No logs match your selected filter criteria.
                   </div>
-                </div>
+                ) : (
+                  /* Filtered Audit Table Layout */
+                  <div className="overflow-hidden border border-slate-800 rounded-xl bg-slate-950/30 backdrop-blur-md shadow-xl">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="border-b border-slate-800 bg-slate-950 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                            <th className="px-6 py-4 w-32">Sentiment</th>
+                            <th className="px-6 py-4 w-1/4">Summary</th>
+                            <th className="px-6 py-4 w-2/5">Redacted Content (PII Purged)</th>
+                            <th className="px-6 py-4 w-40 text-right">Timestamp</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-800/60 text-sm text-slate-300">
+                          {filteredHistoryData.map((ticket) => {
+                            let badgeColor = 'bg-amber-500/10 text-amber-400 border-amber-500/20';
+                            if (ticket.sentiment?.toLowerCase() === 'positive') {
+                              badgeColor = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+                            } else if (ticket.sentiment?.toLowerCase() === 'negative') {
+                              badgeColor = 'bg-rose-500/10 text-rose-400 border-rose-500/20';
+                            }
+
+                            return (
+                              <tr key={ticket.id} className="hover:bg-slate-800/20 transition-colors duration-150">
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${badgeColor}`}>
+                                    {ticket.sentiment || 'unknown'}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4 font-medium text-slate-200">
+                                  {ticket.summary}
+                                </td>
+                                <td className="px-6 py-4 font-mono text-xs text-slate-400 bg-slate-950/20 select-all whitespace-pre-wrap">
+                                  {ticket.redactedContent}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-right text-xs text-slate-500">
+                                  {new Date(ticket.createdAt).toLocaleString(undefined, {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                  })}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
